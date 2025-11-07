@@ -1,92 +1,86 @@
 {-
-  A basic calculator for arithmetic expressions
-  Based on the example in Chapter 8 of "Programming in Haskell"
-  by Graham Hutton.
-
-  Pedro Vasconcelos, 2025
+   A simple purely functional parsing library
+   Based on Chapter 8 of "Programming in Haskell" by Graham Hutton
+   Pedro Vasconcelos, 2025
 -}
-module Main where
+module Parsing( Parser, parse, (<|>), failure, 
+                satisfy, getc, char, many, many1 ) where
 
-import Parsing
-import Data.Char
+-- | the type of parsers:
+--  "A parser for things
+--   is a function from strings
+--   to lists of pairs
+--   of things and strings"
 
---
--- a data type for expressions
--- made up from integer numbers, + and *
---
-data Expr = Num Integer
-          | Add Expr Expr
-          | Mul Expr Expr
-          deriving Show
+newtype Parser a
+  = P (String -> [(a, String)])
 
--- a recursive evaluator for expressions
---
-eval :: Expr -> Integer
-eval (Num n) = n
-eval (Add e1 e2) = eval e1 + eval e2
-eval (Mul e1 e2) = eval e1 * eval e2
+-- | apply a parser
+parse :: Parser a -> String -> [(a, String)]
+parse (P f) s = f s
 
--- | a parser for expressions
--- Grammar rules:
---
--- expr ::= term exprCont
--- exprCont ::= '+' term exprCont | epsilon
-
--- term ::= factor termCont
--- termCont ::= '*' factor termCont | epsilon
-
--- factor ::= natural | '(' expr ')'
-
-expr :: Parser Expr
-expr = do t <- term
-          exprCont t
-
-exprCont :: Expr -> Parser Expr
-exprCont acc = do char '+'
-                  t <- term
-                  exprCont (Add acc t)
-               <|> return acc
-              
-term :: Parser Expr
-term = do f <- factor
-          termCont f
-
-termCont :: Expr -> Parser Expr
-termCont acc =  do char '*'
-                   f <- factor  
-                   termCont (Mul acc f)
-                 <|> return acc
-
-factor :: Parser Expr
-factor = do n <- natural
-            return (Num n)
-          <|>
-          do char '('
-             e <- expr
-             char ')'
-             return e
-             
-
-natural :: Parser Integer
-natural = do xs <- many1 (satisfy isDigit)
-             return (read xs)
-
-----------------------------------------------------------------             
+-- | Monad instance;
+-- this allows us to use do-notation for combining parsers
+instance Monad Parser where
+  -- return :: a -> Parser a
+  -- `return' must be defined as `pure' in GHC>=9.6.x
+  return = pure 
   
-main :: IO ()
-main
-  = do txt <- getContents
-       calculator (lines txt)
+  -- (>>=) :: Parser a -> (a -> Parser b) -> Parser b
+  p >>= f = P (\s -> case parse p s of
+                          [] -> []
+                          [(v,s')] -> parse (f v) s')
 
--- | read-eval-print loop
-calculator :: [String] -> IO ()
-calculator []  = return ()
-calculator (l:ls) = do putStrLn (evaluate l)
-                       calculator ls  
+-- | Monad requires instances of Functor and Applicative
+-- these are just dummy instances to ensure GHC does not complain
+instance Functor Parser where
+  fmap  = error "Functor instance is incomplete"
 
--- | evaluate a single expression
-evaluate :: String -> String
-evaluate txt
-  = case parse expr txt of
-      [ (tree, "") ] ->  show (eval tree)
-      _ -> "parse error; try again"  
+instance Applicative Parser where
+  pure x = P (\s -> [(x,s)]) 
+  (<*>) = error "Applicative instance is incomplete"
+
+
+-- | alternative between two parsers
+-- apply the first parser; if it succeeds return the result;
+-- otherwise try the second parser
+infixl 5 <|>
+
+(<|>) :: Parser a -> Parser a -> Parser a
+p <|> q = P (\s -> case parse p s of
+                        [] -> parse q s
+                        [(v,s')] -> [(v,s')])   
+
+-- | a parser that always fails
+failure :: Parser a
+failure = P (\s -> [])
+
+-- | a parser that return the next character (if any)
+getc :: Parser Char
+getc = P (\s -> case s of
+                  (x:xs) -> [(x, xs)]
+                  []     -> [])
+
+-- | parse a character that satisfies a predicate (boolean function)
+satisfy :: (Char -> Bool) -> Parser Char
+satisfy f = do
+  x <- getc
+  if f x then return x else failure
+
+-- | parse a given character
+char :: Char -> Parser Char
+char c = satisfy (==c)
+
+-- | apply a parser zero or more times;
+-- returns the list of results
+many :: Parser a -> Parser [a]
+many p = many1 p <|> return []
+
+-- | apply a parser one or more times;
+-- return the list of results
+many1 :: Parser a -> Parser [a]
+many1 p = do v <- p
+             vs <- many p
+             return (v:vs)
+
+             
