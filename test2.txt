@@ -1,0 +1,6 @@
+x=1
+x=x*x+1
+xx=x+3
+(x+xx+1)*xx
+y=xx*xx+123
+yy=y*y*x*xx

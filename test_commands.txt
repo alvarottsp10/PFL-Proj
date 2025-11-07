@@ -1,0 +1,5 @@
+ghc Calculator.hs -o Calculator
+
+./Calculator
+
+./Calculator < test1.txt
